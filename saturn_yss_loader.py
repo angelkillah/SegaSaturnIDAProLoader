@@ -1,11 +1,16 @@
 import os
-from idc import *
-from idaapi import *
-from struct import unpack as up
+import ida_idaapi
+import idaapi
+import ida_bytes
+import ida_funcs
+import ida_idp
+import ida_nalt
+import idc
+import struct
 from ctypes import *
 
 FILE_FORMAT_NAME  = "Saturn YSS Save State"
-FILE_SIGNATURE = "YSS"
+FILE_SIGNATURE = b"YSS"
 FILE_SIGNATURE_OFFSET = 0
 FILE_SIGNATURE_LENGTH = 3
 
@@ -41,10 +46,11 @@ def accept_file(li, filename):
                options: should be 1, possibly ORed with ACCEPT_FIRST (0x8000)
                to indicate preferred format
     """
-
+    
     # check the CECE signature
     li.seek(FILE_SIGNATURE_OFFSET)
     if li.read(FILE_SIGNATURE_LENGTH) == FILE_SIGNATURE:
+        print("GOOD")
         # accept the file
         return FILE_FORMAT_NAME
 
@@ -57,49 +63,49 @@ def load_sh2_data(li):
     if not load_header(li):
         return 0
 
-    if not StateCheckRetrieveHeader(li, "CART"):
+    if not StateCheckRetrieveHeader(li, b"CART"):
         error("Invalid CART chunk")
         return
 
-    if not StateCheckRetrieveHeader(li, "CS2 "):
+    if not StateCheckRetrieveHeader(li, b"CS2 "):
         error("Invalid CS2 chunk")
         return
 
-    msh2Size = StateCheckRetrieveHeader(li, "MSH2", False)
+    msh2Size = StateCheckRetrieveHeader(li, b"MSH2", False)
     if not msh2Size:
         error("Invalid MSH2 chunk")
         return
     programCounter = SH2LoadState(li, False, msh2Size)
 
-    if not StateCheckRetrieveHeader(li, "SSH2"):
+    if not StateCheckRetrieveHeader(li, b"SSH2"):
         error("Invalid SSH2 chunk")
         return
 
-    if not StateCheckRetrieveHeader(li, "SCSP"):
+    if not StateCheckRetrieveHeader(li, b"SCSP"):
         error("Invalid SCSP chunk")
         return
 
-    if not StateCheckRetrieveHeader(li, "SCU "):
+    if not StateCheckRetrieveHeader(li, b"SCU "):
         error("Invalid SCU chunk")
         return
     
-    if not StateCheckRetrieveHeader(li, "SMPC"):
+    if not StateCheckRetrieveHeader(li, b"SMPC"):
         error("Invalid SMPC chunk")
         return
         
-    vdp1Size = StateCheckRetrieveHeader(li, "VDP1", False)
+    vdp1Size = StateCheckRetrieveHeader(li, b"VDP1", False)
     if not vdp1Size:
         error("Invalid VDP1 chunk")
         return
     Vdp1LoadState(li, vdp1Size)
 
-    vdp2Size = StateCheckRetrieveHeader(li, "VDP2", False)
+    vdp2Size = StateCheckRetrieveHeader(li, b"VDP2", False)
     if not vdp2Size:
         error("Invalid VDP2 chunk")
         return
     Vdp2LoadState(li, vdp2Size)
 
-    if not StateCheckRetrieveHeader(li, "OTHR", False):
+    if not StateCheckRetrieveHeader(li, b"OTHR", False):
         error("Invalid OTHR chunk")
         return
     li.seek(li.tell()+0x10000) # Backup RAM (BUP)
@@ -112,17 +118,20 @@ def load_sh2_data(li):
     find_parse_ip(li, 0x06002000, True)
     add_untested()
     idaapi.jumpto(programCounter)
-    plan_to_apply_idasgn('SegaBasicLibrary_6.01_Saturn.sig')
-    plan_to_apply_idasgn('SegaGraphicsLibrary_3.02J_Saturn.sig')
-    plan_to_apply_idasgn('SegaSaturnSGLPlusCPK.sig')
+    ida_funcs.plan_to_apply_idasgn('sbl60.sig')
+    ida_funcs.plan_to_apply_idasgn('sbl601.sig')
+    ida_funcs.plan_to_apply_idasgn('sgl20a.sig')
+    ida_funcs.plan_to_apply_idasgn('sgl21.sig')
+    ida_funcs.plan_to_apply_idasgn('sgl300.sig')
+    ida_funcs.plan_to_apply_idasgn('sgl302j.sig')   
     return 1
 
 # -----------------------------------------------------------------------
 def create_load_seg(li, start, end, modificationType,name, segmentType="CODE"):
     # add_segm(0, start, end, name, "")
     seg = idaapi.segment_t()
-    seg.startEA = start
-    seg.endEA   = end
+    seg.start_ea = start
+    seg.end_ea   = end
     seg.bitness = 1 # 32-bit
     idaapi.add_segm_ex(seg, name, "", 0)
     # AddSeg(start, end, 0, 1, idaapi.saAbs, idaapi.scPub)
@@ -138,7 +147,7 @@ def create_load_seg(li, start, end, modificationType,name, segmentType="CODE"):
         byteswapped[1::2] = data[0::2]
         # idaapi.mem2base(str(byteswapped), start, end)
         for i in range(0,end-start):
-            put_byte(start+i, byteswapped[i])
+            idaapi.put_byte(start+i, byteswapped[i])
     else:
         idaapi.mem2base(data, start, end)
 
@@ -158,10 +167,10 @@ def load_file(li, neflags, format):
        warning("Unknown format name: '%s'" % format)
        return 0
 
-    idaapi.set_processor_type("sh3b", SETPROC_LOADER)
+    idaapi.set_processor_type("sh3b", ida_idp.SETPROC_LOADER)
 
     load_sh2_data(li);
-    print "Load OK"
+    print("Load OK")
     return 1
 
 def load_header(li):
@@ -216,12 +225,12 @@ def SH2LoadState(li, isSlave, size):
     return programCounter
 
 def make_vector(addr, name):
-    idaapi.doDwrd(addr, 4)
+    ida_bytes.create_dword(addr, 4)
     idaapi.create_insn(addr)
-    idaapi.add_func(addr, idaapi.BADADDR);
+    idaapi.ida_funcs.add_func(addr, idaapi.ida_idaapi.BADADDR);
     idaapi.add_cref(addr, addr, idaapi.fl_CF);
     if len(name)>0:
-        idaapi.set_name(addr, name)
+        idc.set_name(addr, name)
     return 1
 
 def identify_vector_table():
@@ -235,104 +244,104 @@ def identify_vector_table():
     return 1
 
 def find_bios_funcs():
-    make_ascii_string(0x06000200, 16, ASCSTR_C)
-    doByte(0x06000210, 36)
+    ida_bytes.create_strlit(0x06000200, 16, ida_nalt.STRTYPE_C)
+    ida_bytes.create_byte(0x06000210, 36)
     make_vector(0x06000234, "")
     make_vector(0x06000238, "")
     make_vector(0x0600023C, "")
-    make_ascii_string(0x06000240, 4, ASCSTR_C)
-    make_ascii_string(0x06000244, 4, ASCSTR_C)
-    doDwrd(0x06000248, 4)
-    doDwrd(0x0600024C, 4)
+    ida_bytes.create_strlit(0x06000240, 4, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(0x06000244, 4, ida_nalt.STRTYPE_C)
+    ida_bytes.create_dword(0x06000248, 4)
+    ida_bytes.create_dword(0x0600024C, 4)
     make_vector(0x06000250, "")
-    doDwrd(0x06000264, 4)
+    ida_bytes.create_dword(0x06000264, 4)
     make_vector(0x06000268, "")
     make_vector(0x0600026C, "bios_run_cd_player")
     make_vector(0x06000270, "")
     make_vector(0x06000274, "bios_is_mpeg_card_present")
-    doDwrd(0x06000278, 4)
-    doDwrd(0x0600027C, 4)
+    ida_bytes.create_dword(0x06000278, 4)
+    ida_bytes.create_dword(0x0600027C, 4)
     make_vector(0x06000280, "")
     make_vector(0x06000284, "")
     make_vector(0x06000288, "")
     make_vector(0x0600028C, "")
-    doDwrd(0x06000290, 4)
-    doDwrd(0x06000294, 4)
+    ida_bytes.create_dword(0x06000290, 4)
+    ida_bytes.create_dword(0x06000294, 4)
     make_vector(0x06000298, "bios_get_mpeg_rom")
     make_vector(0x0600029C, "")
-    doDwrd(0x060002A0, 4)
-    doDwrd(0x060002A4, 4)
-    doDwrd(0x060002A8, 4)
-    doDwrd(0x060002AC, 4)
+    ida_bytes.create_dword(0x060002A0, 4)
+    ida_bytes.create_dword(0x060002A4, 4)
+    ida_bytes.create_dword(0x060002A8, 4)
+    ida_bytes.create_dword(0x060002AC, 4)
     make_vector(0x060002B0, "")
-    doDwrd(0x060002B4, 4)
-    doDwrd(0x060002B8, 4)
-    doDwrd(0x060002BC, 4)
-    doDwrd(0x060002C0, 4)
+    ida_bytes.create_dword(0x060002B4, 4)
+    ida_bytes.create_dword(0x060002B8, 4)
+    ida_bytes.create_dword(0x060002BC, 4)
+    ida_bytes.create_dword(0x060002C0, 4)
 
     # for (i = 0x060002C4; i < 0x06000324; i+=4)
     for i in range(0x060002C4,0x06000324,4):
         make_vector(i, "")
-    set_name(0x06000300, "bios_set_scu_interrupt")
-    set_name(0x06000304, "bios_get_scu_interrupt")
-    set_name(0x06000310, "bios_set_sh2_interrupt")
-    set_name(0x06000314, "bios_get_sh2_interrupt")
-    set_name(0x06000320, "bios_set_clock_speed")
-    doDwrd(0x06000324, 4)
-    set_name(0x06000324, "bios_get_clock_speed")
+    idc.set_name(0x06000300, "bios_set_scu_interrupt")
+    idc.set_name(0x06000304, "bios_get_scu_interrupt")
+    idc.set_name(0x06000310, "bios_set_sh2_interrupt")
+    idc.set_name(0x06000314, "bios_get_sh2_interrupt")
+    idc.set_name(0x06000320, "bios_set_clock_speed")
+    ida_bytes.create_dword(0x06000324, 4)
+    idc.set_name(0x06000324, "bios_get_clock_speed")
     # for (i = 0x06000328; i < 0x06000348; i+=4)
     for i in range(0x06000328,0x06000348,4):
         make_vector(i, "")
-    set_name(0x06000340, "bios_set_scu_interrupt_mask")
-    set_name(0x06000344, "bios_change_scu_interrupt_mask")
-    doDwrd(0x06000348, 4)
-    set_name(0x06000348, "bios_get_scu_interrupt_mask")
+    idc.set_name(0x06000340, "bios_set_scu_interrupt_mask")
+    idc.set_name(0x06000344, "bios_change_scu_interrupt_mask")
+    ida_bytes.create_dword(0x06000348, 4)
+    idc.set_name(0x06000348, "bios_get_scu_interrupt_mask")
     make_vector(0x0600034C, "")
-    doDwrd(0x06000350, 4)
-    doDwrd(0x06000354, 4)
-    doDwrd(0x06000358, 4)
-    doDwrd(0x0600035C, 4)
+    ida_bytes.create_dword(0x06000350, 4)
+    ida_bytes.create_dword(0x06000354, 4)
+    ida_bytes.create_dword(0x06000358, 4)
+    ida_bytes.create_dword(0x0600035C, 4)
     for i in range(0x06000360,0x06000380,4):
         make_vector(i, "")
-    doByte(0x06000380, 16)
-    doWord(0x06000390, 16)
-    doDwrd(0x060003A0, 32)
-    make_ascii_string(0x060003C0, 0x40, ASCSTR_C)
-    add_func(0x06000600, BADADDR)
-    add_func(0x06000646, BADADDR)
-    make_ascii_string(0x0600065C, 0x4, ASCSTR_C)
-    add_func(0x06000678, BADADDR)
-    add_func(0x0600067C, BADADDR)
-    add_func(0x06000690, BADADDR)
-    doDwrd(0x06000A80, 0x80);
+    ida_bytes.create_byte(0x06000380, 16)
+    ida_bytes.create_word(0x06000390, 16)
+    ida_bytes.create_dword(0x060003A0, 32)
+    ida_bytes.create_strlit(0x060003C0, 0x40, ida_nalt.STRTYPE_C)
+    ida_funcs.add_func(0x06000600, ida_idaapi.BADADDR)
+    ida_funcs.add_func(0x06000646, ida_idaapi.BADADDR)
+    ida_bytes.create_strlit(0x0600065C, 0x4, ida_nalt.STRTYPE_C)
+    ida_funcs.add_func(0x06000678, ida_idaapi.BADADDR)
+    ida_funcs.add_func(0x0600067C, ida_idaapi.BADADDR)
+    ida_funcs.add_func(0x06000690, ida_idaapi.BADADDR)
+    ida_bytes.create_dword(0x06000A80, 0x80);
     return 1
 
 def find_parse_ip(li, ea, parsecode):
     # TODO check memory for SEGA SATURN string
     # segaSaturn = li.read(16)
     # warning(segaSaturn+' '+str(li.tell()))
-    make_ascii_string(ea, 16, ASCSTR_C)
-    make_ascii_string(ea+0x10, 16, ASCSTR_C)
-    make_ascii_string(ea+0x20, 10, ASCSTR_C)
-    make_ascii_string(ea+0x2A, 6, ASCSTR_C)
-    make_ascii_string(ea+0x30, 8, ASCSTR_C)
-    make_ascii_string(ea+0x38, 8, ASCSTR_C)
-    make_ascii_string(ea+0x40, 10, ASCSTR_C)
-    make_ascii_string(ea+0x4A, 6, ASCSTR_C)
-    make_ascii_string(ea+0x50, 16, ASCSTR_C)
-    make_ascii_string(ea+0x60, 0x70, ASCSTR_C)
-    doByte(ea+0xD0, 16)
-    doDwrd(ea+0xE0, 4)
-    doDwrd(ea+0xE4, 4)
-    doDwrd(ea+0xE8, 4)
-    doDwrd(ea+0xEC, 4)
-    doDwrd(ea+0xF0, 4)
-    add_func(get_long(ea+0xF0), BADADDR)
-    doDwrd(ea+0xF4, 4)
-    doDwrd(ea+0xF8, 4)
-    doDwrd(ea+0xFC, 4)
+    ida_bytes.create_strlit(ea, 16, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x10, 16, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x20, 10, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x2A, 6, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x30, 8, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x38, 8, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x40, 10, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x4A, 6, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x50, 16, ida_nalt.STRTYPE_C)
+    ida_bytes.create_strlit(ea+0x60, 0x70, ida_nalt.STRTYPE_C)
+    ida_bytes.create_byte(ea+0xD0, 16)
+    ida_bytes.create_dword(ea+0xE0, 4)
+    ida_bytes.create_dword(ea+0xE4, 4)
+    ida_bytes.create_dword(ea+0xE8, 4)
+    ida_bytes.create_dword(ea+0xEC, 4)
+    ida_bytes.create_dword(ea+0xF0, 4)
+    ida_funcs.add_func(ida_bytes.get_dword(ea+0xF0), ida_idaapi.BADADDR)
+    ida_bytes.create_dword(ea+0xF4, 4)
+    ida_bytes.create_dword(ea+0xF8, 4)
+    ida_bytes.create_dword(ea+0xFC, 4)
     if parsecode:
-        add_func(ea+0x100, BADADDR)
+        ida_funcs.add_func(ea+0x100, ida_idaapi.BADADDR)
     return 1
 
 # As far as I can see most of these match up for most games but it may depend the version of saturn sdk
@@ -591,4 +600,4 @@ def add_untested():
 (0x06000C30, "GameBuildDate"),
 ]
     for address,name in allAbsAddresses:
-        set_name(address, name)
+        idc.set_name(address, name)
